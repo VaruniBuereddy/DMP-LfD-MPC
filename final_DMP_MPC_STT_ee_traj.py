@@ -21,108 +21,6 @@ class FR3Params:
     ee_frame_name: str = "fr3_hand_tcp"
     finger_joint_names: Tuple[str, str] = ("fr3_finger_joint1", "fr3_finger_joint2")
 
-# class FR3Model:
-#     """Pinocchio-backed FR3 model reduced to 7 DoF by locking finger joints."""
-#     def __init__(self, params: FR3Params):
-#         self.p = params
-#         try:
-#             import pinocchio as pin
-#         except Exception as e:
-#             raise ImportError("Pinocchio is required for FR3Model. Install `pip install pin`.") from e
-#         self.pin = pin
-
-#         # Load the full model
-#         full_model = self.pin.buildModelFromUrdf(self.p.urdf_path)
-#         self.full_model = full_model
-#         self.full_data = self.full_model.createData()
-
-#         # Cache joint counts
-#         self.n_full = self.full_model.nq
-#         self.n_arm = self.p.n_joints
-
-#         # End-effector frame ID
-#         self.ee_fid = self.full_model.getFrameId(self.p.ee_frame_name)
-
-#     # Internal helpers to pad 7→full nq
-#     def _pad_q(self, q7: np.ndarray) -> np.ndarray:
-#         q_full = np.zeros(self.n_full)
-#         q_full[:self.n_arm] = q7
-#         return q_full
-
-#     def _pad_dq(self, dq7: np.ndarray) -> np.ndarray:
-#         dq_full = np.zeros(self.full_model.nv)
-#         dq_full[:self.n_arm] = dq7
-#         return dq_full
-
-#     # ---- Kinematics ----
-#     def fk_position(self, q7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         pin.forwardKinematics(self.full_model, self.full_data, q_full)
-#         pin.updateFramePlacements(self.full_model, self.full_data)
-#         oMf = self.full_data.oMf[self.ee_fid]
-#         return np.asarray(oMf.translation).reshape(3)
-
-#     def jacobian_linear(self, q7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         pin.computeJointJacobians(self.full_model, self.full_data, q_full)
-#         pin.updateFramePlacements(self.full_model, self.full_data)
-#         J6 = pin.getFrameJacobian(self.full_model, self.full_data, self.ee_fid, pin.ReferenceFrame.WORLD)
-#         return np.asarray(J6[:3, :self.n_arm])
-
-#     def jacobian_dot_linear(self, q7: np.ndarray, dq7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         dq_full = self._pad_dq(dq7)
-#         try:
-#             if hasattr(pin, 'computeJointJacobiansTimeVariation'):
-#                 pin.computeJointJacobians(self.full_model, self.full_data, q_full)
-#                 pin.computeJointJacobiansTimeVariation(self.full_model, self.full_data, q_full, dq_full)
-#                 dJ6 = pin.getFrameJacobianTimeVariation(self.full_model, self.full_data, self.ee_fid, pin.ReferenceFrame.WORLD)
-#                 dJv = np.asarray(dJ6[:3, :self.n_arm])
-#             else:
-#                 raise AttributeError
-#         except Exception:
-#             eps = 1e-6
-#             q_fd = q7 + eps * dq7
-#             J0 = self.jacobian_linear(q7)
-#             J1 = self.jacobian_linear(q_fd)
-#             dJv = (J1 - J0) / eps
-#         return dJv
-
-#     # ---- Dynamics ----
-#     def M(self, q7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         M_full = pin.crba(self.full_model, self.full_data, q_full)
-#         M_full = (M_full + M_full.T) * 0.5
-#         return np.asarray(M_full)[:self.n_arm, :self.n_arm]
-
-#     def C(self, q7: np.ndarray, dq7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         dq_full = self._pad_dq(dq7)
-#         C_full = pin.computeCoriolisMatrix(self.full_model, self.full_data, q_full, dq_full)
-#         return np.asarray(C_full)[:self.n_arm, :self.n_arm]
-
-#     def g(self, q7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         g_full = pin.computeGeneralizedGravity(self.full_model, self.full_data, q_full)
-#         return np.asarray(g_full).reshape(-1)[:self.n_arm]
-
-#     def nle(self, q7: np.ndarray, dq7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         dq_full = self._pad_dq(dq7)
-#         nle_full = pin.nonLinearEffects(self.full_model, self.full_data, q_full, dq_full)
-#         return np.asarray(nle_full).reshape(-1)[:self.n_arm]
-
-#     def tau_fric(self, dq7: np.ndarray) -> np.ndarray:
-#         Kv = 0.02  # Identify on hardware later
-#         return Kv * dq7
-
 
 @dataclass
 class DynConfig:
@@ -184,39 +82,6 @@ class AuxDynamics:
     def step(self, x_aux: np.ndarray, u_aux: np.ndarray) -> np.ndarray:
         """One-step propagate x_{k+1} = A x_k + B u_k."""
         return self.A @ x_aux + self.B @ u_aux
-
-
-# def aux_to_tau(mdl: FR3Model, q: np.ndarray, dq: np.ndarray,
-#                Xdot: np.ndarray, u_aux: np.ndarray) -> np.ndarray:
-#     """
-#     τ = J^T ( Λ u_aux + μ + p )  (+ optional joint damping/friction)
-#     with:
-#       Λ   = (J M^{-1} J^T)^{-1}
-#       μ   = Λ [ J M^{-1} (C dq) - dJ dq ]
-#       p   = Λ [ J M^{-1} g ]
-#     """
-#     M  = mdl.M(q)
-#     C  = mdl.C(q, dq)
-#     g  = mdl.g(q)
-#     J  = mdl.jacobian_linear(q)
-#     dJ = mdl.jacobian_dot_linear(q, dq)
-
-#     # Regularize inverses
-#     Minv = np.linalg.inv(M + 1e-6*np.eye(7))
-#     JMJT = J @ Minv @ J.T
-#     JMJT_inv = np.linalg.inv(JMJT + 1e-9*np.eye(3))  # Λ
-
-#     # Task-space bias terms
-#     mu = JMJT_inv @ ( J @ (Minv @ (C @ dq)) - dJ @ dq )
-#     p  = JMJT_inv @ ( J @ (Minv @ g) )
-
-#     F_task = JMJT_inv @ u_aux + mu + p  # This equals Mx*u + Cx*Xdot + Gx
-#     tau = J.T @ F_task
-
-#     # optional viscous joint damping
-#     tau -= 0.2 * dq
-#     return tau
-
 
 
 from dataclasses import dataclass, asdict
@@ -291,8 +156,8 @@ class MPC_AUX:
         self.aux = AuxDynamics(cfg.dt)
 
         # projected-gradient hyperparams
-        self.max_iters  = 20
-        self.alpha_step = 5e-2
+        self.max_iters  = 50      # Increased for better convergence
+        self.alpha_step = 1e-1    # Larger initial step size
         self.bt_beta    = 0.5
         self.bt_c       = 1e-4
 
@@ -351,7 +216,8 @@ class MPC_AUX:
               d_seq: np.ndarray,                 # (S,3) desired EE positions
               v_seq: Optional[np.ndarray] = None,# (S,3) desired EE velocities (optional)
               u_prev: Optional[np.ndarray] = None,
-              return_rollout: bool = False):
+              return_rollout: bool = False,
+              verbose: bool = False):
         """
         Returns:
             u_aux_cmd : np.ndarray, shape (3,)   # EE acceleration command at current step
@@ -370,7 +236,8 @@ class MPC_AUX:
         U = np.clip(U, self.u_min, self.u_max)
 
         # projected gradient with Armijo
-        for _ in range(self.max_iters):
+        cost_history = []
+        for iter_num in range(self.max_iters):
             # rollout
             X = np.zeros((S+1, 6))
             X[0] = x_aux0
@@ -390,6 +257,18 @@ class MPC_AUX:
                     cost += self.w_Rdu * (du @ du)
             eT = E @ X[S] - d_seq[-1]
             cost += self.cfg.Qterm * (eT @ eT)
+
+            cost_history.append(cost)
+
+            # Check convergence
+            if iter_num > 0:
+                cost_reduction = cost_history[-2] - cost_history[-1]
+                if verbose and iter_num % 10 == 0:
+                    print(f"  Iter {iter_num}: cost={cost:.6f}, reduction={cost_reduction:.6e}")
+                if cost_reduction < 1e-6 and cost_reduction >= 0:
+                    if verbose:
+                        print(f"  Converged at iteration {iter_num}")
+                    break
 
             # gradient
             grad = self._grad_adj(A, B, X, U, d_seq, v_seq)
@@ -438,16 +317,13 @@ import numpy as np
 import csv
 import time
 import matplotlib.pyplot as plt
-import numpy as np
-import matplotlib.pyplot as plt
-import time
-import csv
+from mpl_toolkits.mplot3d import Axes3D
 
 def main():
     # -------------------------
     # 1) Load demo & train DMP
     # -------------------------
-    file_path = "/home/iisc-hiro-lab-phd-2/Documents/data/w.csv"
+    file_path = "/home/iisc-hiro-lab-phd-2/Documents/DMP_LfD/STT_tube_ee_trajectory_adjusted.csv"
     trajectories = load_and_augment_trajectories(file_path, n_aug=0)
     t_demo = trajectories[0]["t"].values.astype(float)
     x_demo = trajectories[0]["x"].values.astype(float)
@@ -471,23 +347,33 @@ def main():
     print("t_demo[0], t_demo[-1] =", t_demo[0], t_demo[-1])
     print("T_ref[0], T_ref[-1]     =", T_ref[0], T_ref[-1])
     # Save desired traj (pos + vel)
-    desired_out = np.hstack([T_ref.reshape(-1,1), ref_pos, ref_vel])
-    np.savetxt("desired_dmp_traj.csv", desired_out, delimiter=",",
-               header="time,x_des,y_des,z_des,vx_des,vy_des,vz_des", comments='')
-    print(f"[save] desired_dmp_traj.csv  shape={desired_out.shape}")
+    # desired_out = np.hstack([T_ref.reshape(-1,1), ref_pos, ref_vel])
+    # np.savetxt("desired_dmp_traj.csv", desired_out, delimiter=",",
+    #            header="time,x_des,y_des,z_des,vx_des,vy_des,vz_des", comments='')
+    # print(f"[save] desired_dmp_traj.csv  shape={desired_out.shape}")
 
-    # ------------------------------------------------
+    # # ------------------------------------------------
     # 2) Build MPC on the auxiliary linear model only
     # ------------------------------------------------
     # Config: horizon, weights, dt
-    S = 20  # configurable horizon (10–30); change here if you like
-    mpc_cfg = MPCConfig(S=S, dt=dt)   # keep your current weights in MPCConfig
+    S = 30  # Increased horizon for better trajectory preview
+    mpc_cfg = MPCConfig(
+        S=S,
+        dt=dt,
+        Qp=10000.0,      # Much higher position tracking weight
+        Qterm=15000.0,   # Much higher terminal position weight
+        Rtau=1e-6        # Very small control effort weight for aggressive tracking
+    )
     # Instantiate auxiliary-only MPC (the class that RETURNS u_aux, not torque)
-    mpc = MPC_AUX(mpc_cfg)           # <-- assumes you have the aux-only class from earlier
+    mpc = MPC_AUX(mpc_cfg)
 
-    # Set accel bounds ±2 m/s^2 (per axis)
-    mpc.u_min = -2.0 * np.ones(3)
-    mpc.u_max =  2.0 * np.ones(3)
+    # Set more relaxed accel bounds (m/s^2)
+    mpc.u_min = -8.0 * np.ones(3)
+    mpc.u_max =  8.0 * np.ones(3)
+
+    # Enable velocity tracking for better trajectory following
+    mpc.w_Qv = 500.0    # Higher velocity tracking weight
+    mpc.w_Rdu = 1e-6    # Very low rate smoothing for aggressive tracking
 
     # -----------------------------
     # 3) Receding-horizon simulation
@@ -501,49 +387,83 @@ def main():
     v_log = []    # executed velocities
     u_log = []    # applied accelerations
 
-    steps = N - S - 1
-    for k in range(len(T_ref)):
+    steps = len(T_ref) - 1  # We run until len(T_ref)-1 because we look ahead
+    tracking_errors = []
+
+    # Get A, B matrices once
+    if hasattr(mpc.aux, "AB"):
+        A, B = mpc.aux.AB()
+    elif hasattr(mpc.aux, "A") and hasattr(mpc.aux, "B"):
+        A, B = mpc.aux.A, mpc.aux.B
+    else:
+        raise RuntimeError("Aux dynamics must expose AB() or A,B.")
+
+    for k in range(steps):
         if k % 100 == 0:
-            print(f"Step {k}/{steps}")
+            if tracking_errors:
+                avg_error = np.mean(tracking_errors[-100:])
+                print(f"Step {k}/{steps}, Avg tracking error (last 100 steps): {avg_error:.6f} m")
 
-        # Horizon slice (positions only are used inside UMPC_AUX cost,
-        # but we'll also compare velocities in plots)
+        # Current desired state: we want to be at ref_pos[k] now
+        current_error = np.linalg.norm(x_aux[:3] - ref_pos[k])
+
+        # Horizon slice (positions and velocities for tracking)
+        # d_seq[0] is where we want to be now, d_seq[1] is next step, etc.
         d_seq = ref_pos[k : k + S]
+        v_seq = ref_vel[k : k + S]
+
+        # Pad if necessary
         if d_seq.shape[0] < S:
-            d_seq = np.vstack([d_seq, np.repeat(d_seq[-1:], S - d_seq.shape[0], axis=0)])             # (S,3)
+            d_seq = np.vstack([d_seq, np.repeat(d_seq[-1:], S - d_seq.shape[0], axis=0)])
+            v_seq = np.vstack([v_seq, np.repeat(v_seq[-1:], S - v_seq.shape[0], axis=0)])
 
-        # Solve MPC on aux model → get u_aux[0]
-        # This UMPC_AUX.solve signature should be: solve(x_aux, d_seq, u_prev=None)
-        u0 = mpc.solve(x_aux, d_seq, u_prev=(u_log[-1] if len(u_log) else None))
+        # Solve MPC: find control that minimizes tracking error over horizon
+        verbose = (k == 0)  # Print convergence info for first step only
+        u0 = mpc.solve(x_aux, d_seq, v_seq=v_seq, u_prev=(u_log[-1] if len(u_log) else None), verbose=verbose)
 
-        # Apply u0 to aux dynamics for ONE step: x_{k+1} = A x_k + B u_k
-        A, B, E = mpc.aux.AB(), mpc.aux.B, mpc.aux.E  # UMPC_AUX should expose aux with A,B,E or AB() returning A,B
-        # For clarity, get A,B directly from aux (handle both patterns):
-        if hasattr(mpc.aux, "AB"):
-            A, B = mpc.aux.AB()
-        elif hasattr(mpc.aux, "A") and hasattr(mpc.aux, "B"):
-            A, B = mpc.aux.A, mpc.aux.B
-        else:
-            raise RuntimeError("Aux dynamics must expose AB() or A,B.")
-
-        x_aux = A @ x_aux + B @ u0  # next aux state
-
-        # Log
+        # Log current state before applying control
         t_log.append(T_ref[k])
         x_log.append(x_aux[:3].copy())
         v_log.append(x_aux[3:].copy())
         u_log.append(u0.copy())
+        tracking_errors.append(current_error)
+
+        # Apply control: move to next state
+        x_aux = A @ x_aux + B @ u0
+
+    # Log final state
+    t_log.append(T_ref[-1])
+    x_log.append(x_aux[:3].copy())
+    v_log.append(x_aux[3:].copy())
+    u_log.append(u0.copy())  # Same control as last step
+    final_error = np.linalg.norm(x_aux[:3] - ref_pos[-1])
+    tracking_errors.append(final_error)
 
     t_log = np.array(t_log)
     x_log = np.array(x_log)
     v_log = np.array(v_log)
     u_log = np.array(u_log)
+    tracking_errors = np.array(tracking_errors)
+
+    # Print tracking statistics
+    print("\n" + "="*60)
+    print("TRACKING PERFORMANCE SUMMARY")
+    print("="*60)
+    print(f"Mean tracking error:    {np.mean(tracking_errors):.6f} m")
+    print(f"Max tracking error:     {np.max(tracking_errors):.6f} m")
+    print(f"Std tracking error:     {np.std(tracking_errors):.6f} m")
+    print(f"Final tracking error:   {tracking_errors[-1]:.6f} m")
+    print("="*60 + "\n")
+
+    # Save DMP desired trajectory (not MPC executed)
+    # Compute desired accelerations from velocities
+    ref_acc = np.gradient(ref_vel, dt, axis=0)  # (N,3)
 
     results_out = np.hstack([
-        t_log.reshape(-1, 1),   # time
-        x_log,                  # x, y, z
-        v_log,                  # xdot, ydot, zdot
-        u_log                   # xddot, yddot, zddot
+        T_ref.reshape(-1, 1),   # time
+        ref_pos,                # x, y, z (DMP desired)
+        ref_vel,                # xdot, ydot, zdot (DMP desired)
+        ref_acc                 # xddot, yddot, zddot (DMP desired)
     ])
 
     np.savetxt(
@@ -553,8 +473,8 @@ def main():
         header="time,x,y,z,xdot,ydot,zdot,xddot,yddot,zddot",
         comments=''
     )
-    
-    print(f"[save] dmp_umpc_results.csv  shape={results_out.shape}")
+
+    print(f"[save] dmp_umpc_results.csv (DMP desired trajectory)  shape={results_out.shape}")
     # -----------------
     # 5) Quick plotting
     # -----------------
@@ -597,6 +517,49 @@ def main():
     ax.legend(); ax.grid(True)
 
     plt.suptitle("End-Effector Position Tracking (Demo vs DMP vs MPC)")
+    plt.tight_layout()
+    plt.show()
+
+    # ------------------------------------------
+    # 3D Trajectory Comparison: DMP vs Reference STT
+    # ------------------------------------------
+    fig = plt.figure(figsize=(12, 10))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot reference STT trajectory
+    ax.plot(x_demo, y_demo, z_demo, 'g-', linewidth=2, label='Reference STT Trajectory')
+    ax.scatter(x_demo[0], y_demo[0], z_demo[0], c='green', marker='o', s=100, label='STT Start')
+    ax.scatter(x_demo[-1], y_demo[-1], z_demo[-1], c='darkgreen', marker='x', s=100, label='STT End')
+
+    # Plot DMP-generated trajectory
+    ax.plot(ref_pos_plot[:, 0], ref_pos_plot[:, 1], ref_pos_plot[:, 2], 'r--', linewidth=2, label='DMP Desired Trajectory')
+    ax.scatter(ref_pos_plot[0, 0], ref_pos_plot[0, 1], ref_pos_plot[0, 2], c='red', marker='o', s=100, label='DMP Start')
+    ax.scatter(ref_pos_plot[-1, 0], ref_pos_plot[-1, 1], ref_pos_plot[-1, 2], c='darkred', marker='x', s=100, label='DMP End')
+
+    # Plot MPC-executed trajectory
+    ax.plot(x_log[:, 0], x_log[:, 1], x_log[:, 2], 'b-', linewidth=1.5, alpha=0.7, label='MPC Executed Trajectory')
+    ax.scatter(x_log[0, 0], x_log[0, 1], x_log[0, 2], c='blue', marker='o', s=100, label='MPC Start')
+    ax.scatter(x_log[-1, 0], x_log[-1, 1], x_log[-1, 2], c='darkblue', marker='x', s=100, label='MPC End')
+
+    ax.set_xlabel('X (m)', fontsize=12)
+    ax.set_ylabel('Y (m)', fontsize=12)
+    ax.set_zlabel('Z (m)', fontsize=12)
+    ax.set_title('3D End-Effector Trajectory Comparison', fontsize=14, fontweight='bold')
+    ax.legend(loc='best', fontsize=10)
+    ax.grid(True)
+
+    # Set equal aspect ratio for better visualization
+    max_range = np.array([x_demo.max()-x_demo.min(),
+                          y_demo.max()-y_demo.min(),
+                          z_demo.max()-z_demo.min()]).max() / 2.0
+
+    mid_x = (x_demo.max()+x_demo.min()) * 0.5
+    mid_y = (y_demo.max()+y_demo.min()) * 0.5
+    mid_z = (z_demo.max()+z_demo.min()) * 0.5
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
     plt.tight_layout()
     plt.show()
 

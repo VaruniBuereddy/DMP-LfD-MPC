@@ -5,6 +5,21 @@ import matplotlib.pyplot as plt
 # -------------------- HELPER FUNCTIONS --------------------
 
 @dataclass
+class MPCConfig:
+    
+    S: int = 15               # horizon steps
+    Qp: float = 500.0         # position error weight
+    Rtau: float = 1e-2        # torque weight
+    Qterm: float = 1000.0     # terminal position weight
+    # tau_min: float = -85.0    # Nm (per joint)
+    # tau_max: float = 85.0
+    dt: float = 0.002
+    tau_limits = np.array([87, 87, 87, 87, 12, 12, 12])  
+    tau_min = -tau_limits
+    tau_max =  tau_limits
+
+
+@dataclass
 class DMPConfig:
     alpha_s: float = 4.0
     alpha_z: float = 25.0
@@ -251,7 +266,7 @@ def dmp_rollout_on_time(model: DMPModelXYZ, t: np.ndarray, goal: np.ndarray = No
         s += -alpha_s * s * dt_i / tau
         X[i] = x
 
-    return T, X[:,0], X[:,1], X[:,2]
+    return t, X[:,0], X[:,1], X[:,2]
 
 def plot_reconstruction(t_demo, x_demo, y_demo, z_demo, t_recon, x_recon, y_recon, z_recon):
     """Plot demonstration vs DMP reconstruction in x/y/z subplots."""

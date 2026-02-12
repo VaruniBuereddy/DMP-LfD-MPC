@@ -21,108 +21,6 @@ class FR3Params:
     ee_frame_name: str = "fr3_hand_tcp"
     finger_joint_names: Tuple[str, str] = ("fr3_finger_joint1", "fr3_finger_joint2")
 
-# class FR3Model:
-#     """Pinocchio-backed FR3 model reduced to 7 DoF by locking finger joints."""
-#     def __init__(self, params: FR3Params):
-#         self.p = params
-#         try:
-#             import pinocchio as pin
-#         except Exception as e:
-#             raise ImportError("Pinocchio is required for FR3Model. Install `pip install pin`.") from e
-#         self.pin = pin
-
-#         # Load the full model
-#         full_model = self.pin.buildModelFromUrdf(self.p.urdf_path)
-#         self.full_model = full_model
-#         self.full_data = self.full_model.createData()
-
-#         # Cache joint counts
-#         self.n_full = self.full_model.nq
-#         self.n_arm = self.p.n_joints
-
-#         # End-effector frame ID
-#         self.ee_fid = self.full_model.getFrameId(self.p.ee_frame_name)
-
-#     # Internal helpers to pad 7→full nq
-#     def _pad_q(self, q7: np.ndarray) -> np.ndarray:
-#         q_full = np.zeros(self.n_full)
-#         q_full[:self.n_arm] = q7
-#         return q_full
-
-#     def _pad_dq(self, dq7: np.ndarray) -> np.ndarray:
-#         dq_full = np.zeros(self.full_model.nv)
-#         dq_full[:self.n_arm] = dq7
-#         return dq_full
-
-#     # ---- Kinematics ----
-#     def fk_position(self, q7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         pin.forwardKinematics(self.full_model, self.full_data, q_full)
-#         pin.updateFramePlacements(self.full_model, self.full_data)
-#         oMf = self.full_data.oMf[self.ee_fid]
-#         return np.asarray(oMf.translation).reshape(3)
-
-#     def jacobian_linear(self, q7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         pin.computeJointJacobians(self.full_model, self.full_data, q_full)
-#         pin.updateFramePlacements(self.full_model, self.full_data)
-#         J6 = pin.getFrameJacobian(self.full_model, self.full_data, self.ee_fid, pin.ReferenceFrame.WORLD)
-#         return np.asarray(J6[:3, :self.n_arm])
-
-#     def jacobian_dot_linear(self, q7: np.ndarray, dq7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         dq_full = self._pad_dq(dq7)
-#         try:
-#             if hasattr(pin, 'computeJointJacobiansTimeVariation'):
-#                 pin.computeJointJacobians(self.full_model, self.full_data, q_full)
-#                 pin.computeJointJacobiansTimeVariation(self.full_model, self.full_data, q_full, dq_full)
-#                 dJ6 = pin.getFrameJacobianTimeVariation(self.full_model, self.full_data, self.ee_fid, pin.ReferenceFrame.WORLD)
-#                 dJv = np.asarray(dJ6[:3, :self.n_arm])
-#             else:
-#                 raise AttributeError
-#         except Exception:
-#             eps = 1e-6
-#             q_fd = q7 + eps * dq7
-#             J0 = self.jacobian_linear(q7)
-#             J1 = self.jacobian_linear(q_fd)
-#             dJv = (J1 - J0) / eps
-#         return dJv
-
-#     # ---- Dynamics ----
-#     def M(self, q7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         M_full = pin.crba(self.full_model, self.full_data, q_full)
-#         M_full = (M_full + M_full.T) * 0.5
-#         return np.asarray(M_full)[:self.n_arm, :self.n_arm]
-
-#     def C(self, q7: np.ndarray, dq7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         dq_full = self._pad_dq(dq7)
-#         C_full = pin.computeCoriolisMatrix(self.full_model, self.full_data, q_full, dq_full)
-#         return np.asarray(C_full)[:self.n_arm, :self.n_arm]
-
-#     def g(self, q7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         g_full = pin.computeGeneralizedGravity(self.full_model, self.full_data, q_full)
-#         return np.asarray(g_full).reshape(-1)[:self.n_arm]
-
-#     def nle(self, q7: np.ndarray, dq7: np.ndarray) -> np.ndarray:
-#         pin = self.pin
-#         q_full = self._pad_q(q7)
-#         dq_full = self._pad_dq(dq7)
-#         nle_full = pin.nonLinearEffects(self.full_model, self.full_data, q_full, dq_full)
-#         return np.asarray(nle_full).reshape(-1)[:self.n_arm]
-
-#     def tau_fric(self, dq7: np.ndarray) -> np.ndarray:
-#         Kv = 0.02  # Identify on hardware later
-#         return Kv * dq7
-
 
 @dataclass
 class DynConfig:
@@ -184,39 +82,6 @@ class AuxDynamics:
     def step(self, x_aux: np.ndarray, u_aux: np.ndarray) -> np.ndarray:
         """One-step propagate x_{k+1} = A x_k + B u_k."""
         return self.A @ x_aux + self.B @ u_aux
-
-
-# def aux_to_tau(mdl: FR3Model, q: np.ndarray, dq: np.ndarray,
-#                Xdot: np.ndarray, u_aux: np.ndarray) -> np.ndarray:
-#     """
-#     τ = J^T ( Λ u_aux + μ + p )  (+ optional joint damping/friction)
-#     with:
-#       Λ   = (J M^{-1} J^T)^{-1}
-#       μ   = Λ [ J M^{-1} (C dq) - dJ dq ]
-#       p   = Λ [ J M^{-1} g ]
-#     """
-#     M  = mdl.M(q)
-#     C  = mdl.C(q, dq)
-#     g  = mdl.g(q)
-#     J  = mdl.jacobian_linear(q)
-#     dJ = mdl.jacobian_dot_linear(q, dq)
-
-#     # Regularize inverses
-#     Minv = np.linalg.inv(M + 1e-6*np.eye(7))
-#     JMJT = J @ Minv @ J.T
-#     JMJT_inv = np.linalg.inv(JMJT + 1e-9*np.eye(3))  # Λ
-
-#     # Task-space bias terms
-#     mu = JMJT_inv @ ( J @ (Minv @ (C @ dq)) - dJ @ dq )
-#     p  = JMJT_inv @ ( J @ (Minv @ g) )
-
-#     F_task = JMJT_inv @ u_aux + mu + p  # This equals Mx*u + Cx*Xdot + Gx
-#     tau = J.T @ F_task
-
-#     # optional viscous joint damping
-#     tau -= 0.2 * dq
-#     return tau
-
 
 
 from dataclasses import dataclass, asdict
@@ -471,12 +336,12 @@ def main():
     print("t_demo[0], t_demo[-1] =", t_demo[0], t_demo[-1])
     print("T_ref[0], T_ref[-1]     =", T_ref[0], T_ref[-1])
     # Save desired traj (pos + vel)
-    desired_out = np.hstack([T_ref.reshape(-1,1), ref_pos, ref_vel])
-    np.savetxt("desired_dmp_traj.csv", desired_out, delimiter=",",
-               header="time,x_des,y_des,z_des,vx_des,vy_des,vz_des", comments='')
-    print(f"[save] desired_dmp_traj.csv  shape={desired_out.shape}")
+    # desired_out = np.hstack([T_ref.reshape(-1,1), ref_pos, ref_vel])
+    # np.savetxt("desired_dmp_traj.csv", desired_out, delimiter=",",
+    #            header="time,x_des,y_des,z_des,vx_des,vy_des,vz_des", comments='')
+    # print(f"[save] desired_dmp_traj.csv  shape={desired_out.shape}")
 
-    # ------------------------------------------------
+    # # ------------------------------------------------
     # 2) Build MPC on the auxiliary linear model only
     # ------------------------------------------------
     # Config: horizon, weights, dt
@@ -546,15 +411,15 @@ def main():
         u_log                   # xddot, yddot, zddot
     ])
 
-    np.savetxt(
-        "./W_results/dmp_umpc_results.csv",
-        results_out,
-        delimiter=",",
-        header="time,x,y,z,xdot,ydot,zdot,xddot,yddot,zddot",
-        comments=''
-    )
+    # np.savetxt(
+    #     "./tmp_W_results/dmp_umpc_results.csv",
+    #     results_out,
+    #     delimiter=",",
+    #     header="time,x,y,z,xdot,ydot,zdot,xddot,yddot,zddot",
+    #     comments=''
+    # )
     
-    print(f"[save] dmp_umpc_results.csv  shape={results_out.shape}")
+    # print(f"[save] dmp_umpc_results.csv  shape={results_out.shape}")
     # -----------------
     # 5) Quick plotting
     # -----------------
